@@ -2,6 +2,8 @@
 
 一个以宏观状态、价格结构和公开数据为核心的多资产交易观察工具。项目用于研究和监测，不构成投资建议。
 
+**在线体验：** [cross-asset-structure-monitor.streamlit.app](https://cross-asset-structure-monitor.streamlit.app/)
+
 ## 当前功能
 
 - 宏观状态：增长、通胀、利率、流动性、金融压力、中国周期与美元动量。
