@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO, StringIO
+from pathlib import Path
 from zipfile import ZipFile
 
 import numpy as np
@@ -10,6 +11,8 @@ import requests
 
 FRED_GRAPH_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_ids}"
 ACM_TERM_PREMIUM_URL = "https://www.newyorkfed.org/medialibrary/media/research/data_indicators/acmPlot_data.csv"
+ROOT = Path(__file__).resolve().parent
+MACRO_CACHE_DIR = ROOT / "data" / "macro"
 
 SERIES_META = {
     "INDPRO": ("增长", "美国工业生产", "指数"),
@@ -64,16 +67,46 @@ def _read_fred_response(content: bytes) -> dict[str, pd.DataFrame]:
     return result
 
 
-def fetch_macro_series() -> dict[str, pd.DataFrame]:
+def load_macro_cache() -> dict[str, pd.DataFrame]:
+    result: dict[str, pd.DataFrame] = {}
+    for series_id in [*SERIES_META, *ACM_SERIES_META]:
+        path = MACRO_CACHE_DIR / f"{series_id}.csv"
+        if not path.exists():
+            continue
+        frame = pd.read_csv(path, parse_dates=["date"])
+        clean = frame[["date", "value"]].dropna().sort_values("date")
+        if not clean.empty:
+            result[series_id] = clean.drop_duplicates("date", keep="last").reset_index(drop=True)
+    return result
+
+
+def _save_macro_cache(data: dict[str, pd.DataFrame]) -> None:
+    MACRO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    for series_id, frame in data.items():
+        frame[["date", "value"]].to_csv(
+            MACRO_CACHE_DIR / f"{series_id}.csv",
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+
+def fetch_macro_series(prefer_cache: bool = False) -> dict[str, pd.DataFrame]:
+    cached = load_macro_cache()
+    if prefer_cache and set(SERIES_META).issubset(cached):
+        return cached
+
     series_ids = list(SERIES_META)
     result: dict[str, pd.DataFrame] = {}
     session = requests.Session()
     session.headers.update({"User-Agent": "cross-asset-monitor/0.7"})
     for start in range(0, len(series_ids), 8):
         batch = series_ids[start:start + 8]
-        response = session.get(FRED_GRAPH_URL.format(series_ids=",".join(batch)), timeout=60)
-        response.raise_for_status()
-        result.update(_read_fred_response(response.content))
+        try:
+            response = session.get(FRED_GRAPH_URL.format(series_ids=",".join(batch)), timeout=25)
+            response.raise_for_status()
+            result.update(_read_fred_response(response.content))
+        except Exception:
+            result.update({series_id: cached[series_id] for series_id in batch if series_id in cached})
     missing = sorted(set(series_ids) - set(result))
     if missing:
         raise RuntimeError(f"FRED缺少宏观序列：{', '.join(missing)}")
@@ -83,7 +116,8 @@ def fetch_macro_series() -> dict[str, pd.DataFrame]:
         result.update(parse_acm_term_premium(response.text))
     except Exception:
         # ACM is an explanatory model input; FRED state monitoring remains usable without it.
-        pass
+        result.update({series_id: cached[series_id] for series_id in ACM_SERIES_META if series_id in cached})
+    _save_macro_cache(result)
     return result
 
 

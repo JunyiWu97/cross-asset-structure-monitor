@@ -1,11 +1,34 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import pandas as pd
 
-from macro_regime import analyze_treasury_drivers, build_asset_impact, parse_acm_term_premium
+from macro_regime import (
+    SERIES_META,
+    analyze_treasury_drivers,
+    build_asset_impact,
+    fetch_macro_series,
+    parse_acm_term_premium,
+)
 
 
 class MacroRegimeTest(unittest.TestCase):
+    def test_prefer_cache_avoids_remote_macro_request(self):
+        with TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            for series_id in SERIES_META:
+                pd.DataFrame({"date": ["2026-09-01"], "value": [1.0]}).to_csv(
+                    cache_dir / f"{series_id}.csv", index=False
+                )
+            with patch("macro_regime.MACRO_CACHE_DIR", cache_dir), patch(
+                "macro_regime.requests.Session.get",
+                side_effect=AssertionError("cache-first mode must not use the network"),
+            ):
+                result = fetch_macro_series(prefer_cache=True)
+            self.assertEqual(set(result), set(SERIES_META))
+
     def test_acm_parser_separates_expected_short_rate_and_term_premium(self):
         parsed = parse_acm_term_premium(
             "RunDates,TERMYld,ACMFITYld,GSWYld\n"

@@ -11,6 +11,8 @@ import requests
 import yfinance as yf
 
 from climate_pipeline import build_climate_dataset
+from enso_monitor import fetch_noaa_image, fetch_roni, fetch_weekly_sst
+from macro_regime import fetch_macro_series
 from signal_engine import calculate_signal
 
 
@@ -236,8 +238,34 @@ def main() -> None:
 
     pd.DataFrame(signals).to_csv(SIGNALS_PATH, index=False, encoding="utf-8-sig")
     pd.DataFrame(snapshots).to_csv(SNAPSHOT_PATH, index=False, encoding="utf-8-sig")
-    environment = fetch_environment()
-    climate = build_climate_dataset()
+    try:
+        environment = fetch_environment()
+    except Exception as exc:
+        if not ENVIRONMENT_PATH.exists():
+            raise
+        environment = pd.read_csv(ENVIRONMENT_PATH)
+        print(f"CACHE environment  {exc}", flush=True)
+    try:
+        climate = build_climate_dataset()
+    except Exception as exc:
+        climate_path = ROOT / "data" / "climate_latest.csv"
+        if not climate_path.exists():
+            raise
+        climate = pd.read_csv(climate_path)
+        print(f"CACHE climate  {exc}", flush=True)
+    try:
+        macro = fetch_macro_series()
+        print(f"Saved {len(macro)} macro series to {ROOT / 'data' / 'macro'}", flush=True)
+    except Exception as exc:
+        print(f"CACHE macro  {exc}", flush=True)
+    try:
+        fetch_weekly_sst()
+        fetch_roni()
+        for image_id in ("sst_map", "sst_hovmoller", "heat_content", "subsurface"):
+            fetch_noaa_image(image_id)
+        print("Saved NOAA ENSO text and image snapshots", flush=True)
+    except Exception as exc:
+        print(f"CACHE ENSO  {exc}", flush=True)
     print(f"\nSaved {len(signals)}/{len(universe)} signals to {SIGNALS_PATH}", flush=True)
     print(f"Saved {len(environment)} environment indicators to {ENVIRONMENT_PATH}", flush=True)
     print(f"Saved {len(climate)} climate regions to {ROOT / 'data' / 'climate_latest.csv'}", flush=True)

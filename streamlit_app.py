@@ -1,11 +1,12 @@
 from pathlib import Path
+import time
 
 import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from intraday_data import fetch_intraday_bars
+from intraday_data import fetch_daily_bars, fetch_intraday_bars
 from derivatives_data import fetch_cot_history, fetch_crypto_options, fetch_term_structure
 from enso_monitor import build_enso_snapshot, fetch_noaa_image, fetch_roni, fetch_weekly_sst
 from fed_policy import CME_FEDWATCH_URL, CME_METHOD_URL, analyze_fed_policy
@@ -72,9 +73,14 @@ def load_history(asset_id: str, version: int) -> pd.DataFrame:
     return pd.read_csv(HISTORY_DIR / f"{asset_id}.csv", parse_dates=["date"])
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=60, max_entries=32, show_spinner=False)
 def load_intraday_history(symbol: str, source: str, interval: str, timezone: str) -> pd.DataFrame:
     return fetch_intraday_bars(symbol, source, interval, timezone)
+
+
+@st.cache_data(ttl=900, max_entries=32, show_spinner=False)
+def load_daily_history_live(symbol: str, source: str, timezone: str) -> pd.DataFrame:
+    return fetch_daily_bars(symbol, source, timezone)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -104,7 +110,7 @@ def load_gold_contract_activity() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 @st.cache_data(ttl=3600, max_entries=2, show_spinner=False)
 def load_macro_regime(version: int) -> dict:
-    return analyze_macro_regime(fetch_macro_series())
+    return analyze_macro_regime(fetch_macro_series(prefer_cache=True))
 
 
 @st.cache_data(ttl=900, max_entries=2, show_spinner=False)
@@ -114,8 +120,8 @@ def load_fed_policy(version: int) -> dict:
 
 @st.cache_data(ttl=21600, max_entries=2, show_spinner=False)
 def load_enso_monitor(version: int) -> dict:
-    weekly, weekly_cached, weekly_fetched_at = fetch_weekly_sst()
-    roni, roni_cached, roni_fetched_at = fetch_roni()
+    weekly, weekly_cached, weekly_fetched_at = fetch_weekly_sst(prefer_cache=True)
+    roni, roni_cached, roni_fetched_at = fetch_roni(prefer_cache=True)
     return {
         "weekly": weekly,
         "roni": roni,
@@ -127,7 +133,7 @@ def load_enso_monitor(version: int) -> dict:
 
 @st.cache_data(ttl=21600, max_entries=8, show_spinner=False)
 def load_enso_image(image_id: str, version: int) -> tuple[bytes, bool, object]:
-    return fetch_noaa_image(image_id)
+    return fetch_noaa_image(image_id, prefer_cache=True)
 
 
 @st.cache_data
@@ -198,10 +204,16 @@ filtered = filtered.reset_index(drop=True)
 
 st.title("跨资产结构监测")
 latest_date = data["trade_date"].max()
-st.caption(f"宏观状态优先 · 日线雷达截至 {latest_date:%Y-%m-%d} · 详情页支持1分钟至日线")
+st.caption(
+    f"宏观状态优先 · 日线雷达截至 {latest_date:%Y-%m-%d}（每6小时检查更新） · "
+    "分钟K线在结构详情中按需读取"
+)
 
 macro_tab, radar_tab, detail_tab, environment_tab, source_tab = st.tabs(
-    ["宏观局势", "信号雷达", "结构详情", "环境状态", "数据源"]
+    ["宏观局势", "信号雷达", "结构详情", "环境状态", "数据源"],
+    default="信号雷达",
+    key="main_view",
+    on_change="rerun",
 )
 
 with macro_tab:
@@ -734,6 +746,9 @@ with macro_tab:
             st.caption("资产影响是条件映射。得分接近零表示宏观证据相互抵消；低置信度资产必须等待库存、供给或天气数据确认。")
         st.caption(f"市场数据最新截至 {macro['latest_market_date']:%Y-%m-%d} · FRED与OECD公开序列 · 缓存1小时")
 
+if macro_tab.open:
+    st.stop()
+
 with radar_tab:
     with st.container(horizontal=True):
         st.metric("监测标的", f"{len(filtered)} / {len(data)}", border=True)
@@ -767,6 +782,9 @@ with radar_tab:
     if event.selection.rows:
         st.session_state["selected_asset_id"] = filtered.iloc[event.selection.rows[0]]["asset_id"]
 
+if radar_tab.open:
+    st.stop()
+
 with detail_tab:
     default_id = st.session_state.get("selected_asset_id", filtered.iloc[0]["asset_id"] if not filtered.empty else data.iloc[0]["asset_id"])
     options = data["asset_id"].tolist()
@@ -788,14 +806,42 @@ with detail_tab:
             options=["核心位", "含推演目标"],
             default="核心位",
         )
-        refresh_clicked = st.button("刷新", icon=":material/refresh:", disabled=timeframe == "1d")
+        auto_refresh = st.toggle("60秒自动刷新", value=False, disabled=timeframe == "1d")
+        refresh_clicked = st.button("立即刷新", icon=":material/refresh:")
     selected = data.set_index("asset_id").loc[selected_id]
     history_path = HISTORY_DIR / f"{selected_id}.csv"
     if refresh_clicked:
         load_intraday_history.clear()
+        load_daily_history_live.clear()
+    if detail_tab.open and timeframe != "1d" and auto_refresh:
+        @st.fragment(run_every="60s")
+        def intraday_refresh_tick() -> None:
+            bucket = int(time.time() // 60)
+            key = f"intraday_refresh_bucket_{selected_id}_{timeframe}"
+            previous = st.session_state.get(key)
+            st.session_state[key] = bucket
+            st.caption("自动刷新已开启 · 免费源可能存在延迟")
+            if previous is not None and previous != bucket:
+                load_intraday_history.clear()
+                st.rerun(scope="app")
+
+        intraday_refresh_tick()
     try:
         if timeframe == "1d":
-            full_history = load_history(selected_id, history_path.stat().st_mtime_ns)
+            try:
+                if not detail_tab.open:
+                    raise RuntimeError("当前未打开结构详情")
+                with st.spinner("检查最新已完成日线..."):
+                    full_history = load_daily_history_live(
+                        str(selected["public_symbol"]),
+                        str(selected["price_source"]),
+                        str(selected["timezone"]),
+                    )
+                daily_source_note = "公开接口实时检查"
+            except Exception as live_exc:
+                full_history = load_history(selected_id, history_path.stat().st_mtime_ns)
+                daily_source_note = f"仓库快照兜底（实时检查失败：{live_exc}）"
+                st.warning(f"实时日线暂不可达，正在显示最近快照：{live_exc}")
         else:
             with st.spinner(f"读取{TIMEFRAME_LABELS[timeframe]}行情..."):
                 full_history = load_intraday_history(
@@ -807,7 +853,7 @@ with detail_tab:
         model = calculate_signal(full_history)
     except Exception as exc:
         st.error(f"{selected['name_cn']}的{TIMEFRAME_LABELS[timeframe]}数据暂不可用：{exc}")
-        st.caption("免费分钟数据存在回溯长度和交易所覆盖限制；页面不会用日线替代分钟线。")
+        st.caption("免费分钟数据存在延迟、回溯长度和交易所覆盖限制；页面不会用日线冒充分钟线。")
         st.stop()
 
     is_long = model["direction"] == "long"
@@ -860,10 +906,11 @@ with detail_tab:
 
     cot_history = pd.DataFrame()
     cot_error = None
-    try:
-        cot_history = load_cot_history(selected_id)
-    except Exception as exc:
-        cot_error = str(exc)
+    if detail_tab.open:
+        try:
+            cot_history = load_cot_history(selected_id)
+        except Exception as exc:
+            cot_error = str(exc)
     scoring_model = dict(model)
     scoring_model["status"] = display_status
     scoring_model["signed_distance_to_b_atr"] = signed_distance
@@ -1075,9 +1122,10 @@ with detail_tab:
         not np.isclose(value, float(model[field]))
         for field, value in [("b", custom_b), ("delta", custom_delta), ("invalidation", custom_invalidation)]
     ) else str(model["delta_source"])
+    freshness_note = daily_source_note if timeframe == "1d" else "公开分钟接口 · 缓存60秒"
     st.caption(
         f"{len(full_history):,}根{TIMEFRAME_LABELS[timeframe]}K线 · 截至{full_history.iloc[-1]['date']:%Y-%m-%d %H:%M} · "
-        f"点位来源：{point_source} · T2、T3为等距推演"
+        f"{freshness_note} · 点位来源：{point_source} · T2、T3为等距推演"
     )
 
     derivative_options = ["成交与持仓", "期限结构", "期权结构"]
@@ -1295,6 +1343,9 @@ with detail_tab:
     if selected["气候背景"] != "-":
         st.info(f"气候背景：{selected['气候背景']}。价格结构决定触发，气候只用于确认或否决。")
 
+if detail_tab.open:
+    st.stop()
+
 with environment_tab:
     env = environment.set_index("indicator_id")
     with st.container(horizontal=True):
@@ -1322,11 +1373,12 @@ with environment_tab:
     st.caption(f"截至 {env.loc[env_id, 'as_of']:%Y-%m-%d} · {env.loc[env_id, 'source']} · {env.loc[env_id, 'note']}")
 
     st.subheader("ENSO海洋监控")
-    try:
-        enso = load_enso_monitor((ROOT / "enso_monitor.py").stat().st_mtime_ns)
-    except Exception as exc:
-        enso = None
-        st.error(f"NOAA ENSO监控数据暂时读取失败：{exc}")
+    enso = None
+    if environment_tab.open:
+        try:
+            enso = load_enso_monitor((ROOT / "enso_monitor.py").stat().st_mtime_ns)
+        except Exception as exc:
+            st.error(f"NOAA ENSO监控数据暂时读取失败：{exc}")
     if enso is not None:
         snapshot = enso["snapshot"]
         roni_latest = enso["roni"].iloc[-1]
@@ -1476,6 +1528,9 @@ with environment_tab:
     )
     st.altair_chart(alt.layer(rain_chart, soil_chart).resolve_scale(y="independent").properties(height=330))
     st.caption("NASA POWER多点等权篮子 · 30日降雨相对2016年以来同季节中位数 · 土壤湿度显示同一近实时段内30日变化")
+
+if environment_tab.open:
+    st.stop()
 
 with source_tab:
     display_sources = sources.rename(columns={

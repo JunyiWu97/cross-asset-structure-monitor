@@ -105,3 +105,29 @@ def fetch_intraday_bars(
     if len(result) < 80:
         raise RuntimeError(f"该周期仅取得{len(result)}根K线，无法计算模型所需的80根")
     return result
+
+
+def fetch_daily_bars(symbol: str, source: str, timezone: str | None = None) -> pd.DataFrame:
+    if source == "yahoo":
+        raw = yf.download(
+            symbol,
+            period="5y",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=False,
+            timeout=25,
+        )
+        if raw.empty:
+            raise RuntimeError("Yahoo未返回该标的的日线行情")
+        result = _standardize(raw, timezone)
+    elif source == "akshare_sina":
+        raw = ak.futures_zh_daily_sina(symbol=symbol)
+        if raw.empty:
+            raise RuntimeError("AKShare/新浪未返回该标的的日线行情")
+        result = _standardize(raw)
+    else:
+        raise RuntimeError(f"数据源{source}暂不支持日线行情")
+    if len(result) < 80:
+        raise RuntimeError(f"日线仅取得{len(result)}根K线，无法计算模型所需的80根")
+    return result

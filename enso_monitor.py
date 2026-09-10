@@ -72,9 +72,12 @@ def parse_roni(text: str) -> pd.DataFrame:
     return frame[["date", "season", "year", "roni"]].dropna().reset_index(drop=True)
 
 
-def _request_text(url: str, cache_name: str) -> tuple[str, bool, datetime]:
+def _request_text(url: str, cache_name: str, prefer_cache: bool = False) -> tuple[str, bool, datetime]:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = CACHE_DIR / cache_name
+    if prefer_cache and cache_path.exists():
+        timestamp = datetime.fromtimestamp(cache_path.stat().st_mtime, tz=timezone.utc)
+        return cache_path.read_text(encoding="utf-8"), True, timestamp
     try:
         response = requests.get(url, headers=_SESSION_HEADERS, timeout=30)
         response.raise_for_status()
@@ -87,23 +90,26 @@ def _request_text(url: str, cache_name: str) -> tuple[str, bool, datetime]:
         return cache_path.read_text(encoding="utf-8"), True, timestamp
 
 
-def fetch_weekly_sst() -> tuple[pd.DataFrame, bool, datetime]:
-    text, cached, fetched_at = _request_text(WEEKLY_SST_URL, "weekly_sst.txt")
+def fetch_weekly_sst(prefer_cache: bool = False) -> tuple[pd.DataFrame, bool, datetime]:
+    text, cached, fetched_at = _request_text(WEEKLY_SST_URL, "weekly_sst.txt", prefer_cache)
     return parse_weekly_sst(text), cached, fetched_at
 
 
-def fetch_roni() -> tuple[pd.DataFrame, bool, datetime]:
-    text, cached, fetched_at = _request_text(RONI_URL, "roni.txt")
+def fetch_roni(prefer_cache: bool = False) -> tuple[pd.DataFrame, bool, datetime]:
+    text, cached, fetched_at = _request_text(RONI_URL, "roni.txt", prefer_cache)
     return parse_roni(text), cached, fetched_at
 
 
-def fetch_noaa_image(image_id: str) -> tuple[bytes, bool, datetime]:
+def fetch_noaa_image(image_id: str, prefer_cache: bool = False) -> tuple[bytes, bool, datetime]:
     if image_id not in NOAA_IMAGE_URLS:
         raise KeyError(f"未知NOAA图层：{image_id}")
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     url = NOAA_IMAGE_URLS[image_id]
     suffix = Path(url).suffix or ".img"
     cache_path = CACHE_DIR / f"{image_id}{suffix}"
+    if prefer_cache and cache_path.exists():
+        timestamp = datetime.fromtimestamp(cache_path.stat().st_mtime, tz=timezone.utc)
+        return cache_path.read_bytes(), True, timestamp
     try:
         response = requests.get(url, headers=_SESSION_HEADERS, timeout=45)
         response.raise_for_status()
