@@ -1,0 +1,23 @@
+source_id,name,cost,coverage,endpoint_or_docs,role,caveat
+akshare_sina,AKShare/新浪公开期货行情,免费,中国期货日线,https://akshare.akfamily.xyz/data/futures/futures.html,6个国内期货主价格源,第三方公共接口可能改版
+yahoo,Yahoo Finance公共行情,免费,全球期货、港股ETF与主流加密资产,https://finance.yahoo.com/,16个海外与加密标的主价格源,非官方API且连续期货成交量不可用于容量判断
+cboe_vix,Cboe VIX历史数据,免费,VIX日线,https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv,风险状态过滤器,指数数据不等同于可交易合约
+noaa_oni,NOAA/CPC Oceanic Niño Index,免费,ENSO三个月滑动季节值,https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt,农产品气候过滤器,发布滞后且区域影响具有条件性
+noaa_weekly_sst,NOAA/CPC周度海温与诊断图,免费,四个Niño区周度SST及太平洋海温空间和次表层结构,https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/enso.shtml,ENSO早期监控与空间形态确认,周度异常不等于持续达到官方ENSO事件标准
+noaa_roni,NOAA/CPC Relative Oceanic Niño Index,免费,剔除热带平均海温背景后的三个月Niño3.4异常,https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt,区分区域ENSO信号与长期热带海洋增暖背景,RONI仍是海洋指标且不能替代大气耦合确认
+fred_hy_oas,FRED高收益债OAS,免费,美国信用利差日线,https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2,信用风险过滤器,仅限内部研究并遵守ICE数据条款
+fred_macro,FRED宏观与市场序列,免费,美国增长通胀利率流动性美元及金融条件,https://fred.stlouisfed.org/,宏观状态与市场定价,不同频率和发布日期不可直接视为同一时点
+nyfed_acm,纽约联储ACM期限溢价,免费,10年期国债期限溢价与预期短端利率成分,https://www.newyorkfed.org/research/data_indicators/term-premia-tabs,区分政策路径与持有长期债券的风险补偿,模型估计且月度更新；不是可直接观测价格
+oecd_cli,OECD中国领先指标（经FRED）,免费,中国综合领先指标月线,https://fred.stlouisfed.org/series/CHNLOLITOAASTSAM,中国周期代理,月频且发布滞后；不能替代地产信用和库存数据
+coingecko,CoinGecko Demo公共API,免费额度,BTC现货,https://docs.coingecko.com/reference/introduction,周末风险偏好过滤器,限频且免费额度无SLA
+nasa_power,NASA POWER Daily API,免费,全球日频降雨与土壤湿度,https://power.larc.nasa.gov/docs/services/api/temporal/daily/,可可咖啡白糖产区水分过滤器,约50公里网格且近实时数据后续可能修订
+cftc_cot,CFTC Commitments of Traders,免费,美国商品期货周频分类持仓,https://publicreporting.cftc.gov/stories/s/r4w3-av2u,管理基金与产业套保持仓背景,周二截面周五发布且不适合分钟择时
+yahoo_contracts,Yahoo分月期货报价,免费,海外主要期货期限曲线,https://finance.yahoo.com/,近远月价差和展期背景,非官方API且部分远月合约可能缺失
+cme_bulletin,CME Daily Bulletin,免费,CME期货与期权日终成交量和持仓量,https://www.cmegroup.com/market-data/daily-bulletin.html,海外期权结构官方入口,公告为PDF且最终数据次日上午发布
+nbp_london_gold,NBP伦敦黄金定盘代理,免费,基于伦敦定盘价计算的黄金日度价格,https://api.nbp.pl/en.html,COMEX黄金的现货价格确认与参考基差,按NBP发布日期并以同日USD/PLN反推；不是实时可执行报价
+deribit,Deribit Public API,免费,BTC与ETH期货期权快照,https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency,加密期权持仓与期限结构,仅代表Deribit市场且持仓量单位因产品而异
+yahoo_zq,Yahoo逐月联邦基金期货,免费,30天联邦基金期货逐月延迟行情,https://finance.yahoo.com/quote/ZQ=F/,隐含月均EFFR与政策路径,非官方API且不保证实时性或服务等级
+fred_policy,FRED联邦基金政策利率,免费,EFFR及目标区间上下限,https://fred.stlouisfed.org/series/DFF,概率树当前利率锚,最新EFFR通常较行情日期滞后一日
+fed_fomc_calendar,美联储FOMC会议日历,免费,官方会议与政策决定日期,https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm,确定会议月内变动前后天数,未来日期仍可能调整
+cme_fedwatch_method,CME FedWatch方法论,免费公开说明,概率计算规则与官方结果入口,https://www.cmegroup.com/articles/2023/understanding-the-cme-group-fedwatch-tool-methodology.html,校验开源复算方法,官方FedWatch API需另行开通且免费行情复算可能有差异
+cme_fedwatch_public,CME FedWatch公开页面,免费公开页面,各次FOMC当前及历史对比概率,https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html,政策概率主数据源,网页结构变化时自动降级为公开行情复算

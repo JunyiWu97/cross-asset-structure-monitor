@@ -1,0 +1,14 @@
+point_id,crop,region_id,region_cn,country,latitude,longitude,weight,related_assets,notes
+civ_daloa,可可,cocoa_west_africa,西非可可带,科特迪瓦,6.88,-6.45,1,cc,中西部主产区
+civ_san_pedro,可可,cocoa_west_africa,西非可可带,科特迪瓦,4.75,-6.64,1,cc,西南沿海主产区
+ghana_kumasi,可可,cocoa_west_africa,西非可可带,加纳,6.69,-1.62,1,cc,阿散蒂产区
+ghana_sunyani,可可,cocoa_west_africa,西非可可带,加纳,7.34,-2.33,1,cc,博诺产区
+brazil_varginha,咖啡,coffee_brazil,巴西咖啡带,巴西,-21.55,-45.43,1,kc,南米纳斯咖啡区
+brazil_patrocinio,咖啡,coffee_brazil,巴西咖啡带,巴西,-18.94,-46.99,1,kc,塞拉多咖啡区
+brazil_linhares,咖啡,coffee_brazil,巴西咖啡带,巴西,-19.39,-40.07,1,kc,圣埃斯皮里图咖啡区
+brazil_ribeirao,白糖,sugar_brazil,巴西中南糖区,巴西,-21.17,-47.81,1,sr,圣保罗甘蔗带
+brazil_piracicaba,白糖,sugar_brazil,巴西中南糖区,巴西,-22.73,-47.65,1,sr,圣保罗甘蔗带
+india_kolhapur,白糖,sugar_india,印度糖区,印度,16.70,74.24,1,sr,马哈拉施特拉甘蔗区
+india_lucknow,白糖,sugar_india,印度糖区,印度,26.85,80.95,1,sr,北方邦甘蔗区
+thailand_khon_kaen,白糖,sugar_thailand,泰国糖区,泰国,16.43,102.83,1,sr,东北部甘蔗区
+thailand_korat,白糖,sugar_thailand,泰国糖区,泰国,14.98,102.10,1,sr,呵叻甘蔗区

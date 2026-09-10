@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environments and editors
+.venv/
+venv/
+.idea/
+.vscode/
+*.code-workspace
+
+# Streamlit secrets must never be committed
+.streamlit/secrets.toml
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Runtime output
+*.log
+
+# Research screenshots copied from third-party social posts are kept local.
+ariston_target_evidence/
+
+# Private research notes and intermediate audit outputs stay local.
+Ariston_*.md
+ariston_signal_audit.csv
+ariston_signal_audit.md
+ariston_signal_audit.py
+ariston_target_analysis.py
+ariston_target_samples*.csv
+地平线全球策略-*.md
+
+# Local reference material that is not part of the application.
+senior_analyst/

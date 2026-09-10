@@ -1,0 +1,4 @@
+﻿indicator_id,name_cn,as_of,value,unit,state,source,source_url,note
+vix,VIX,2026-09-02,15.2,指数点,常态,Cboe官方CSV,https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv,衡量美股近端隐含波动，不直接决定方向
+oni,Oceanic Niño Index,2026-06-01,1.39,°C异常,暖位相发展中,NOAA/CPC文本序列,https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt,最新季节MJJ；近5个重叠季中2个≥+0.5°C
+hy_oas,美国高收益债OAS,2026-09-01,2.65,百分点,常态,FRED/ICE BofA,https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2,信用市场压力过滤器；仅用于内部研究
