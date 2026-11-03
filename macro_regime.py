@@ -10,6 +10,11 @@ import numpy as np
 import pandas as pd
 import requests
 
+try:
+    from curl_cffi import requests as browser_requests
+except ImportError:  # Local environments can still read committed caches.
+    browser_requests = None
+
 
 FRED_GRAPH_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_ids}"
 ACM_TERM_PREMIUM_URL = "https://www.newyorkfed.org/medialibrary/media/research/data_indicators/acmPlot_data.csv"
@@ -144,11 +149,17 @@ def _fetch_fred_series(
     retries: int = 2,
 ) -> pd.DataFrame:
     error: Exception | None = None
-    session = requests.Session()
-    session.headers.update({"User-Agent": "cross-asset-monitor/0.8"})
+    url = FRED_GRAPH_URL.format(series_ids=series_id)
     for attempt in range(retries):
         try:
-            response = session.get(FRED_GRAPH_URL.format(series_ids=series_id), timeout=15)
+            if browser_requests is not None:
+                response = browser_requests.get(url, timeout=20, impersonate="chrome")
+            else:
+                response = requests.get(
+                    url,
+                    timeout=15,
+                    headers={"User-Agent": "Mozilla/5.0 Chrome/152 Safari/537.36"},
+                )
             response.raise_for_status()
             parsed = _read_fred_response(response.content)
             if series_id not in parsed or parsed[series_id].empty:
