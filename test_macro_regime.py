@@ -1,12 +1,13 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
 from macro_regime import (
     SERIES_META,
+    _fetch_fred_series,
     analyze_treasury_drivers,
     build_asset_impact,
     fetch_macro_series,
@@ -16,6 +17,21 @@ from macro_regime import (
 
 
 class MacroRegimeTest(unittest.TestCase):
+    def test_fred_fetch_uses_browser_impersonation_when_available(self):
+        response = Mock()
+        response.content = b"observation_date,DGS10\n2026-10-30,4.94\n"
+        response.raise_for_status.return_value = None
+        browser = Mock()
+        browser.get.return_value = response
+        with patch("macro_regime.browser_requests", browser):
+            result = _fetch_fred_series("DGS10", retries=1)
+        self.assertEqual(result.iloc[-1]["value"], 4.94)
+        browser.get.assert_called_once_with(
+            "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10",
+            timeout=20,
+            impersonate="chrome",
+        )
+
     def test_macro_freshness_distinguishes_release_lag_from_stale_cache(self):
         data = {
             series_id: pd.DataFrame({"date": ["2026-10-30"], "value": [1.0]})
