@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO, StringIO
 from pathlib import Path
 import time
@@ -139,14 +140,15 @@ def macro_freshness(
 
 
 def _fetch_fred_series(
-    session: requests.Session,
     series_id: str,
-    retries: int = 3,
+    retries: int = 2,
 ) -> pd.DataFrame:
     error: Exception | None = None
+    session = requests.Session()
+    session.headers.update({"User-Agent": "cross-asset-monitor/0.8"})
     for attempt in range(retries):
         try:
-            response = session.get(FRED_GRAPH_URL.format(series_ids=series_id), timeout=25)
+            response = session.get(FRED_GRAPH_URL.format(series_ids=series_id), timeout=15)
             response.raise_for_status()
             parsed = _read_fred_response(response.content)
             if series_id not in parsed or parsed[series_id].empty:
@@ -165,21 +167,27 @@ def fetch_macro_series(prefer_cache: bool = False) -> dict[str, pd.DataFrame]:
         return cached
 
     result: dict[str, pd.DataFrame] = {}
-    session = requests.Session()
-    session.headers.update({"User-Agent": "cross-asset-monitor/0.7"})
     failures: list[str] = []
-    for series_id in SERIES_META:
-        try:
-            result[series_id] = _fetch_fred_series(session, series_id)
-        except Exception as exc:
-            if series_id in cached:
-                result[series_id] = cached[series_id]
-                failures.append(f"{series_id}刷新失败，沿用缓存：{exc}")
-            else:
-                failures.append(f"{series_id}刷新失败且无缓存：{exc}")
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            executor.submit(_fetch_fred_series, series_id): series_id
+            for series_id in SERIES_META
+        }
+        for future in as_completed(futures):
+            series_id = futures[future]
+            try:
+                result[series_id] = future.result()
+            except Exception as exc:
+                if series_id in cached:
+                    result[series_id] = cached[series_id]
+                    failures.append(f"{series_id}刷新失败，沿用缓存：{exc}")
+                else:
+                    failures.append(f"{series_id}刷新失败且无缓存：{exc}")
     missing = sorted(set(SERIES_META) - set(result))
     if missing:
         raise RuntimeError(f"FRED缺少宏观序列：{', '.join(missing)}")
+    session = requests.Session()
+    session.headers.update({"User-Agent": "cross-asset-monitor/0.8"})
     try:
         response = session.get(ACM_TERM_PREMIUM_URL, timeout=60)
         response.raise_for_status()
