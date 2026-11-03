@@ -203,9 +203,12 @@ if not include_warnings:
 filtered = filtered.reset_index(drop=True)
 
 st.title("跨资产结构监测")
-latest_date = data["trade_date"].max()
+crypto_mask = data["asset_id"].isin(["btc", "eth"])
+traditional_date = data.loc[~crypto_mask, "trade_date"].max()
+crypto_date = data.loc[crypto_mask, "trade_date"].max()
 st.caption(
-    f"宏观状态优先 · 日线雷达截至 {latest_date:%Y-%m-%d}（每6小时检查更新） · "
+    f"宏观状态优先 · 传统资产截至 {traditional_date:%Y-%m-%d} · "
+    f"加密资产截至 {crypto_date:%Y-%m-%d}（每6小时检查更新） · "
     "分钟K线在结构详情中按需读取"
 )
 
@@ -226,6 +229,15 @@ with macro_tab:
         scores = macro["factor_scores"]
         states = macro["states"]
         confidence = macro["confidence"]
+        stale_macro = macro["freshness"][macro["freshness"]["数据状态"] == "滞后"]
+        if not stale_macro.empty:
+            stale_names = macro["metrics"].set_index("series_id")["指标"].to_dict()
+            stale_text = "、".join(
+                f"{stale_names.get(row.series_id, row.series_id)}（截至{row.截至:%Y-%m-%d}）"
+                for row in stale_macro.itertuples(index=False)
+                if pd.notna(row.截至)
+            )
+            st.error(f"宏观数据滞后，相关判断仅供参考：{stale_text}")
         st.subheader("宏观状态")
         with st.container(horizontal=True):
             st.metric("当前象限", macro["regime"], border=True)
@@ -266,7 +278,7 @@ with macro_tab:
                 macro["metrics"]["模块"].isin(["增长", "通胀", "中国周期"])
             ].copy()
             st.dataframe(
-                overview[["模块", "指标", "最新值", "单位", "截至", "1个月变化", "3个月变化", "10年Z值"]],
+                overview[["模块", "指标", "最新值", "单位", "截至", "数据状态", "1个月变化", "3个月变化", "10年Z值"]],
                 hide_index=True,
                 column_config={
                     "截至": st.column_config.DateColumn(format="YYYY-MM-DD"),
@@ -280,7 +292,7 @@ with macro_tab:
         elif macro_view == "流动性":
             liquidity = macro["metrics"][macro["metrics"]["模块"].isin(["流动性", "金融条件"])].copy()
             st.dataframe(
-                liquidity[["模块", "指标", "最新值", "单位", "截至", "1个月变化", "3个月变化", "10年Z值"]],
+                liquidity[["模块", "指标", "最新值", "单位", "截至", "数据状态", "1个月变化", "3个月变化", "10年Z值"]],
                 hide_index=True,
                 column_config={
                     "截至": st.column_config.DateColumn(format="YYYY-MM-DD"),
@@ -744,7 +756,11 @@ with macro_tab:
                 },
             )
             st.caption("资产影响是条件映射。得分接近零表示宏观证据相互抵消；低置信度资产必须等待库存、供给或天气数据确认。")
-        st.caption(f"市场数据最新截至 {macro['latest_market_date']:%Y-%m-%d} · FRED与OECD公开序列 · 缓存1小时")
+        stale_count = int((macro["freshness"]["数据状态"] == "滞后").sum())
+        st.caption(
+            f"市场数据最新截至 {macro['latest_market_date']:%Y-%m-%d} · "
+            f"FRED与OECD公开序列 · 滞后序列 {stale_count} 个 · 缓存1小时"
+        )
 
 if macro_tab.open:
     st.stop()

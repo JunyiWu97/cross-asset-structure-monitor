@@ -10,11 +10,26 @@ from macro_regime import (
     analyze_treasury_drivers,
     build_asset_impact,
     fetch_macro_series,
+    macro_freshness,
     parse_acm_term_premium,
 )
 
 
 class MacroRegimeTest(unittest.TestCase):
+    def test_macro_freshness_distinguishes_release_lag_from_stale_cache(self):
+        data = {
+            series_id: pd.DataFrame({"date": ["2026-10-30"], "value": [1.0]})
+            for series_id in SERIES_META
+        }
+        data["PCEPILFE"] = pd.DataFrame({"date": ["2026-09-01"], "value": [1.0]})
+        fresh = macro_freshness(data, as_of="2026-11-03").set_index("series_id")
+        self.assertEqual(fresh.loc["DGS10", "数据状态"], "正常")
+        self.assertEqual(fresh.loc["PCEPILFE", "数据状态"], "正常")
+
+        data["PCEPILFE"] = pd.DataFrame({"date": ["2026-07-01"], "value": [1.0]})
+        stale = macro_freshness(data, as_of="2026-11-03").set_index("series_id")
+        self.assertEqual(stale.loc["PCEPILFE", "数据状态"], "滞后")
+
     def test_prefer_cache_avoids_remote_macro_request(self):
         with TemporaryDirectory() as directory:
             cache_dir = Path(directory)

@@ -258,6 +258,7 @@ def main() -> None:
         print(f"Saved {len(macro)} macro series to {ROOT / 'data' / 'macro'}", flush=True)
     except Exception as exc:
         print(f"CACHE macro  {exc}", flush=True)
+        failures.append(f"macro: {exc}")
     try:
         fetch_weekly_sst()
         fetch_roni()

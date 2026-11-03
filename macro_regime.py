@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO, StringIO
 from pathlib import Path
+import time
 from zipfile import ZipFile
 
 import numpy as np
@@ -39,6 +40,30 @@ SERIES_META = {
 ACM_SERIES_META = {
     "ACMTP10": ("利率分解", "10年ACM期限溢价", "%"),
     "ACMEXP10": ("利率分解", "10年预期短端利率成分", "%"),
+}
+
+SERIES_MAX_AGE_DAYS = {
+    "INDPRO": 75,
+    "PAYEMS": 75,
+    "UNRATE": 75,
+    "CHNLOLITOAASTSAM": 120,
+    "CPIAUCSL": 75,
+    "PCEPILFE": 75,
+    "T5YIE": 10,
+    "DGS2": 10,
+    "DGS10": 10,
+    "DFII10": 10,
+    "T10YIE": 10,
+    "T10Y2Y": 10,
+    "WALCL": 14,
+    "WTREGEN": 14,
+    "RRPONTSYD": 10,
+    "BAMLH0A0HYM2": 10,
+    "NFCI": 21,
+    "DTWEXBGS": 10,
+    "VIXCLS": 10,
+    "ACMTP10": 75,
+    "ACMEXP10": 75,
 }
 
 
@@ -90,24 +115,69 @@ def _save_macro_cache(data: dict[str, pd.DataFrame]) -> None:
         )
 
 
+def macro_freshness(
+    data: dict[str, pd.DataFrame],
+    as_of: pd.Timestamp | str | None = None,
+) -> pd.DataFrame:
+    reference = pd.Timestamp(as_of or pd.Timestamp.now()).normalize().tz_localize(None)
+    rows: list[dict] = []
+    for series_id, max_age_days in SERIES_MAX_AGE_DAYS.items():
+        frame = data.get(series_id)
+        latest = pd.NaT
+        if frame is not None and not frame.empty:
+            latest = pd.to_datetime(frame["date"], errors="coerce").max()
+        age_days = (reference - latest).days if pd.notna(latest) else None
+        stale = age_days is None or age_days > max_age_days
+        rows.append({
+            "series_id": series_id,
+            "截至": latest,
+            "滞后天数": age_days,
+            "允许滞后天数": max_age_days,
+            "数据状态": "滞后" if stale else "正常",
+        })
+    return pd.DataFrame(rows)
+
+
+def _fetch_fred_series(
+    session: requests.Session,
+    series_id: str,
+    retries: int = 3,
+) -> pd.DataFrame:
+    error: Exception | None = None
+    for attempt in range(retries):
+        try:
+            response = session.get(FRED_GRAPH_URL.format(series_ids=series_id), timeout=25)
+            response.raise_for_status()
+            parsed = _read_fred_response(response.content)
+            if series_id not in parsed or parsed[series_id].empty:
+                raise RuntimeError(f"FRED未返回{series_id}")
+            return parsed[series_id]
+        except Exception as exc:
+            error = exc
+            if attempt + 1 < retries:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(str(error))
+
+
 def fetch_macro_series(prefer_cache: bool = False) -> dict[str, pd.DataFrame]:
     cached = load_macro_cache()
     if prefer_cache and set(SERIES_META).issubset(cached):
         return cached
 
-    series_ids = list(SERIES_META)
     result: dict[str, pd.DataFrame] = {}
     session = requests.Session()
     session.headers.update({"User-Agent": "cross-asset-monitor/0.7"})
-    for start in range(0, len(series_ids), 8):
-        batch = series_ids[start:start + 8]
+    failures: list[str] = []
+    for series_id in SERIES_META:
         try:
-            response = session.get(FRED_GRAPH_URL.format(series_ids=",".join(batch)), timeout=25)
-            response.raise_for_status()
-            result.update(_read_fred_response(response.content))
-        except Exception:
-            result.update({series_id: cached[series_id] for series_id in batch if series_id in cached})
-    missing = sorted(set(series_ids) - set(result))
+            result[series_id] = _fetch_fred_series(session, series_id)
+        except Exception as exc:
+            if series_id in cached:
+                result[series_id] = cached[series_id]
+                failures.append(f"{series_id}刷新失败，沿用缓存：{exc}")
+            else:
+                failures.append(f"{series_id}刷新失败且无缓存：{exc}")
+    missing = sorted(set(SERIES_META) - set(result))
     if missing:
         raise RuntimeError(f"FRED缺少宏观序列：{', '.join(missing)}")
     try:
@@ -118,6 +188,13 @@ def fetch_macro_series(prefer_cache: bool = False) -> dict[str, pd.DataFrame]:
         # ACM is an explanatory model input; FRED state monitoring remains usable without it.
         result.update({series_id: cached[series_id] for series_id in ACM_SERIES_META if series_id in cached})
     _save_macro_cache(result)
+    stale = macro_freshness(result)
+    stale_ids = stale.loc[stale["数据状态"] == "滞后", "series_id"].tolist()
+    if failures or stale_ids:
+        details = [*failures]
+        if stale_ids:
+            details.append(f"宏观序列超过允许滞后：{', '.join(stale_ids)}")
+        raise RuntimeError("；".join(details))
     return result
 
 
@@ -416,6 +493,9 @@ def analyze_macro_regime(data: dict[str, pd.DataFrame]) -> dict:
             "10年Z值": _zscore_latest(clean),
         })
     metrics = pd.DataFrame(rows)
+    freshness = macro_freshness(data)
+    freshness_status = freshness.set_index("series_id")["数据状态"]
+    metrics["数据状态"] = metrics["series_id"].map(freshness_status).fillna("未知")
     latest_market_date = max(
         _series(data, series_id).index.max()
         for series_id in ["T5YIE", "DGS2", "DGS10", "DFII10", "T10YIE", "T10Y2Y", "BAMLH0A0HYM2", "DTWEXBGS", "VIXCLS"]
@@ -434,6 +514,7 @@ def analyze_macro_regime(data: dict[str, pd.DataFrame]) -> dict:
             "美元动量": "高（日频）",
         },
         "metrics": metrics,
+        "freshness": freshness,
         "series": derived,
         "treasury_drivers": {
             "1周": analyze_treasury_drivers(data, days=7),
