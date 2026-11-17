@@ -50,12 +50,14 @@ ACM_SERIES_META = {
 }
 
 SERIES_MAX_AGE_DAYS = {
-    "INDPRO": 75,
-    "PAYEMS": 75,
-    "UNRATE": 75,
+    # Monthly observations are dated at the start of their reference month,
+    # so a normally released value can already appear 75+ days old.
+    "INDPRO": 95,
+    "PAYEMS": 95,
+    "UNRATE": 95,
     "CHNLOLITOAASTSAM": 120,
-    "CPIAUCSL": 75,
-    "PCEPILFE": 75,
+    "CPIAUCSL": 95,
+    "PCEPILFE": 95,
     "T5YIE": 10,
     "DGS2": 10,
     "DGS10": 10,
