@@ -32,6 +32,30 @@ class MacroRegimeTest(unittest.TestCase):
             impersonate="chrome",
         )
 
+    def test_fred_fetch_falls_back_to_dbnomics(self):
+        browser = Mock()
+        browser.get.side_effect = RuntimeError("FRED TLS reset")
+        fallback = Mock()
+        fallback.raise_for_status.return_value = None
+        fallback.json.return_value = {
+            "series": {
+                "docs": [{
+                    "period": ["2026-11-13", "2026-11-16"],
+                    "value": [4.20, 4.18],
+                }]
+            }
+        }
+        with patch("macro_regime.browser_requests", browser), patch(
+            "macro_regime.requests.get", return_value=fallback
+        ) as request:
+            result = _fetch_fred_series("DGS10", retries=1)
+        self.assertEqual(result.iloc[-1]["value"], 4.18)
+        request.assert_called_once_with(
+            "https://api.db.nomics.world/v22/series/FRED/DGS10?observations=1",
+            timeout=20,
+            headers={"User-Agent": "cross-asset-monitor/1.0"},
+        )
+
     def test_macro_freshness_distinguishes_release_lag_from_stale_cache(self):
         data = {
             series_id: pd.DataFrame({"date": ["2026-10-30"], "value": [1.0]})
