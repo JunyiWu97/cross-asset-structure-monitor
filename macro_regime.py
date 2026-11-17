@@ -17,6 +17,7 @@ except ImportError:  # Local environments can still read committed caches.
 
 
 FRED_GRAPH_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_ids}"
+DBNOMICS_FRED_URL = "https://api.db.nomics.world/v22/series/FRED/{series_id}?observations=1"
 ACM_TERM_PREMIUM_URL = "https://www.newyorkfed.org/medialibrary/media/research/data_indicators/acmPlot_data.csv"
 ROOT = Path(__file__).resolve().parent
 MACRO_CACHE_DIR = ROOT / "data" / "macro"
@@ -169,7 +170,28 @@ def _fetch_fred_series(
             error = exc
             if attempt + 1 < retries:
                 time.sleep(2 ** attempt)
-    raise RuntimeError(str(error))
+
+    # FRED occasionally resets TLS connections from cloud runners. DBnomics
+    # republishes FRED observations and provides a stable, keyless fallback.
+    try:
+        response = requests.get(
+            DBNOMICS_FRED_URL.format(series_id=series_id),
+            timeout=20,
+            headers={"User-Agent": "cross-asset-monitor/1.0"},
+        )
+        response.raise_for_status()
+        docs = response.json()["series"]["docs"]
+        if not docs:
+            raise RuntimeError(f"DBnomics未返回{series_id}")
+        frame = pd.DataFrame({"date": docs[0]["period"], "value": docs[0]["value"]})
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+        frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
+        frame = frame.dropna().sort_values("date").drop_duplicates("date", keep="last")
+        if frame.empty:
+            raise RuntimeError(f"DBnomics返回的{series_id}为空")
+        return frame.reset_index(drop=True)
+    except Exception as fallback_error:
+        raise RuntimeError(f"FRED: {error}; DBnomics: {fallback_error}") from fallback_error
 
 
 def fetch_macro_series(prefer_cache: bool = False) -> dict[str, pd.DataFrame]:
